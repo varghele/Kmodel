@@ -1,6 +1,3 @@
-import numpy as np
-import pandas as pd
-
 class KModel:
     def __init__(self, df):
         self.df = df
@@ -18,10 +15,11 @@ class KModel:
             # Remove "errors", where productivity is unreasonably high
             self.df = self.df[self.df[clmns[0]] < 1]
         else:
-            # Remove "errors", when productivity was 0
-            self.df = self.df[self.df[clmns] != 0]
-            # Remove "errors", where productivity is unreasonably high
-            self.df = self.df[self.df[clmns] < 1]
+            for clmn in clmns:
+                # Remove "errors", when productivity was 0
+                self.df = self.df[self.df[clmn] != 0]
+                # Remove "errors", where productivity is unreasonably high
+                self.df = self.df[self.df[clmn] < 1]
         
         return self.df
     
@@ -78,9 +76,10 @@ class KModel:
         return pareto_efficient_idx
     
     
-    def get_best_values(self, clmns):
+    def get_best_values(self, clmns, n_fronts=3):
         """
         :param clmns: list of column names
+        :param n_fronts: int that defines how many pareto fronts are considered
         :return: Dataframe of only the "best" values
         """
         # If "best" is determined by only one parameter, simple pick values to the right of the mean
@@ -89,43 +88,55 @@ class KModel:
             self.df = self.df[self.df[clmns[0]]>mean]
         else:
             #Get pareto optimal solutions
-            par = self.is_pareto_efficient_simple(np.array(self.df[clmns].values.tolist()))
+            par = self.is_pareto_efficient_simple(np.array(self.df[clmns].values.tolist()), n_fronts)
             # Select pareto optimal points from dataframe
             self.df = self.df[par]
             
         return self.df
     
     
-    def get_aggregate(self,clmns):
+    def get_aggregate(self,clmns,target_id_clmn_name,
+                      target_clmn_name):
         """
-        :param clmns
+        :param clmns: list of column names
+        :param target_id_clmn_name: string of name of ID column
+        :param target_clmn_name: string of name of target column
         :return:
         """
         results = []
         # Only select columns that are not targets or weight
-        out_cols = [i for i in self.df.columns if (i not in clmns) and (i!="weight") and (i!="cl_values")]
-        for i in np.unique(newdf["cl_id"].values):
+        out_cols = [i for i in self.df.columns if (i not in clmns) and (i!="weight") and (i!=target_clmn_name)]
+        for i in np.unique(self.df[target_id_clmn_name].values):
             # Get aggregated centerlining value
-            cl_value = np.sum((self.df[self.df["cl_id"]==i]["cl_values"]*self.df[self.df["cl_id"]==i]["weight"]))/np.sum(self.df[self.df["cl_id"]==i]["weight"])
+            cl_value = np.sum((self.df[self.df[target_id_clmn_name]==i][target_clmn_name]*self.df[self.df[target_id_clmn_name]==i]["weight"]))/np.sum(self.df[self.df[target_id_clmn_name]==i]["weight"])
             # Only select columns that are not targets or weight
-            results.append(self.df[self.df["cl_id"]==i][out_cols].iloc[0].values.tolist()+[cl_value])
-        self.df = pd.DataFrame(results, columns = out_cols+["cl_values"])
+            results.append(self.df[self.df[target_id_clmn_name]==i][out_cols].iloc[0].values.tolist()+[cl_value])
+        self.df = pd.DataFrame(results, columns = out_cols+[target_clmn_name])
             
         return self.df
     
         
-    def forward(self):
+    def forward(self, clmns, target_id_clmn_name, target_clmn_name, daterange=90, n_fronts=3):
+        """
+        :param clmns:
+        :param target_id_clmn_name: string of name of ID column
+        :param target_clmn_name: string of name of target column
+        :param daterange: int that represents how many points(days) of data are considered
+        :param n_fronts: int that defines how many pareto fronts are considered        
+        :return:
+        """
         # Remove outlier data (too far removed from mean)
-        self.remove_outliers(clmns = ["OEE"])
+        self.remove_outliers(clmns=clmns)
         
         # Apply weight column that weighs data by date
-        self.weight_by_date(daterange = 90)
+        self.weight_by_date(daterange=daterange)
         
         # only select values that are better than the mean (or on the pareto front)
-        self.get_best_values(clmns = ["OEE", "quality_rate"])
+        self.get_best_values(clmns=clmns, n_fronts=n_fronts)
         
         # average between the values
-        self.get_aggregate(clmns = ["OEE", "quality_rate"])
+        self.get_aggregate(clmns=clmns, target_id_clmn_name=target_id_clmn_name,
+                           target_clmn_name=target_clmn_name)
         
         # Return results
         return self.df

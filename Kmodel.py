@@ -1,5 +1,11 @@
+import numpy as np
+import pandas as pd
+
 class KModel:
-    def __init__(self, df):
+    def __init__(self):
+        self.df = None
+    
+    def ingest_data(self, df):
         self.df = df
         
     def remove_outliers(self, clmns):
@@ -31,7 +37,7 @@ class KModel:
         :return: Dataframe with "weight" column
         """
         # Get unique dates
-        unq_dates = self.df["prod_day"].unique()
+        unq_dates = self.df["productionday"].unique()
         
         # Create weight column
         self.df["weight"] = ""
@@ -39,7 +45,7 @@ class KModel:
         # Create weight column that creates weight depending on daterange
         weights = [0 for i in range(len(unq_dates)-daterange)] + [i for i in range(1,daterange+1)][::-1]
         for i in range(len(unq_dates)):
-            self.df["weight"].iloc[self.df.index[self.df['prod_day'] == unq_dates[::-1][i]].tolist()] = weights[i]
+            self.df["weight"].loc[self.df.index[self.df['productionday'] == unq_dates[::-1][i]].tolist()] = weights[i]
             
         # Eliminate values with 0 weight
         self.df = self.df[self.df["weight"] != 0]
@@ -108,7 +114,11 @@ class KModel:
         out_cols = [i for i in self.df.columns if (i not in clmns) and (i!="weight") and (i!=target_clmn_name)]
         for i in np.unique(self.df[target_id_clmn_name].values):
             # Get aggregated centerlining value
-            cl_value = np.sum((self.df[self.df[target_id_clmn_name]==i][target_clmn_name]*self.df[self.df[target_id_clmn_name]==i]["weight"]))/np.sum(self.df[self.df[target_id_clmn_name]==i]["weight"])
+            try:
+                cl_value = np.sum((self.df[self.df[target_id_clmn_name]==i][target_clmn_name]*self.df[self.df[target_id_clmn_name]==i]["weight"]))/np.sum(self.df[self.df[target_id_clmn_name]==i]["weight"])
+            except:
+                #Case if there are non-numerical values
+                cl_value = self.df[self.df[target_id_clmn_name]==i][target_clmn_name].values.tolist()[0]
             # Only select columns that are not targets or weight
             results.append(self.df[self.df[target_id_clmn_name]==i][out_cols].iloc[0].values.tolist()+[cl_value])
         self.df = pd.DataFrame(results, columns = out_cols+[target_clmn_name])
@@ -116,15 +126,18 @@ class KModel:
         return self.df
     
         
-    def forward(self, clmns, target_id_clmn_name, target_clmn_name, daterange=90, n_fronts=3):
+    def forward(self, df, clmns, target_id_clmn_name, target_clmn_name, daterange=90, n_fronts=3):
         """
-        :param clmns:
+        :param df: dataframe that is ingested
+        :param clmns: columns the optimizer is run against
         :param target_id_clmn_name: string of name of ID column
         :param target_clmn_name: string of name of target column
         :param daterange: int that represents how many points(days) of data are considered
         :param n_fronts: int that defines how many pareto fronts are considered        
         :return:
         """
+        self.ingest_data(df)
+        
         # Remove outlier data (too far removed from mean)
         self.remove_outliers(clmns=clmns)
         
